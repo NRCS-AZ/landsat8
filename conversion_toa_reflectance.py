@@ -1,7 +1,13 @@
+class LicenseError(Exception):
+    pass
+
+class SpatialRefProjError (Exception):
+    pass
 
 import arcpy as ap
 import numpy as np
 import os, sys, time, glob, math, string
+
 
 def process_toa(path, output=None):
     '''Calc/converts TOA Reflectance for each band in the directory
@@ -19,7 +25,7 @@ def process_toa(path, output=None):
         all_bands = [band for band in os.listdir(path) if '.TIF' in band]
 
         for band in all_bands:
-            band_nums = ['B2.', 'B3.', 'B4.', 'B5.', 'B6.','B7.', 'B8.', 'B9.']
+            band_nums = ['B2.', 'B3.', 'B4.', 'B5.', 'B6.','B7.', 'B8.']
             for num in band_nums:
                 if num in band:
                     ret_bands.append(band)
@@ -34,7 +40,7 @@ def process_toa(path, output=None):
     if output is None:
         output = os.path.join(path, 'processed_toa')
         if os.path.exists(output):
-            sys.exit("Directory already exists. Please rename the directory: " + output)
+            print "Directory already Exisits"
         else:
             os.mkdir(output)
             print "Created the output directory: " + output
@@ -45,20 +51,55 @@ def process_toa(path, output=None):
             os.mkdir(output)
             print "Created the output directory: " + output
 
-    print toa_bands
+    try:
+        if ap.CheckExtension('Spatial') == 'Available':
+            ap.CheckOutExtension('Spatial')
+        else:
+            raise LicenseError
+        
+        for band in toa_bands:
+            calc_toa(band, output, mtl)
 
-def calc_toa(band, out_band, meta):
+    except SpatialRefProjError:
+        ap.AddError ("Spatial Data must use a projected coordinate system to run")
+
+    except LicenseError:
+        ap.AddError ("Spatial Analyst license is unavailable") 	
+
+    finally:
+        ap.CheckInExtension("Spatial")
+        # arcpy.Delete_management("forGettingLoc")
+
+
+def calc_toa(band_file, output, meta):
     '''Raster Algebra to run reflectance equation
 
-        @param   band:image TIF of landsat 8 band
-        @type    band: GEOTIfF file
+        @param   band_file:image TIF of landsat 8 band
+        @type    band_file: GEOTIfF file
         @param   meta: metadata parsed from MTL file
         @typr    meta: dictionary
-        @return  out_band: out raster of band
+        @return  output: out raster path
     
     '''
+    band = band_nmbr(band_file)
+    raster_band = ap.sa.Raster(band_file)
+    out_band = 'toa_refl_band_' + str(band) + '.img'
     
+    sun_elev = float(meta['IMAGE_ATTRIBUTES']['SUN_ELEVATION'])
+    rad_mult = float(meta['RADIOMETRIC_RESCALING']['RADIANCE_MULT_BAND_' + str(band)])
+    rad_add = float(meta['RADIOMETRIC_RESCALING']['RADIANCE_ADD_BAND_' + str(band)])
     
+    print ""
+    print "Calculating TOA Reflectance for Band " + str(band)
+    toa_refl = (rad_mult*raster_band + rad_add)/(math.sin(sun_elev))
+
+    print "Writing " + str(out_band)
+    toa_refl.save(os.path.join(output, out_band))
+
+    
+def band_nmbr(filename):
+    band_number = filename.split('_')[1].split('.')[0].replace('B', '')
+    return band_number
     
 def parse_mtl(path=None):
     '''Traverse the downloaded landsat directory and read MTL file
