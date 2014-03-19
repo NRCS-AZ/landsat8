@@ -62,6 +62,7 @@ def process_toa(path, output=None):
         print "Finished TOA Reflectance Conversion"
 
         stack_bands(output, mtl)
+        ##pan_sharpen(output, mtl)
 
     except SpatialRefProjError:
         ap.AddError ("Spatial Data must use a projected coordinate system to run")
@@ -80,7 +81,7 @@ def calc_toa(band_file, output, meta):
         @param   band_file:image TIF of landsat 8 band
         @type    band_file: GEOTIfF file
         @param   meta: metadata parsed from MTL file
-        @typr    meta: dictionary
+        @type    meta: dictionary
         @return  output: out raster path
     
     '''
@@ -112,7 +113,7 @@ def stack_bands(path, meta):
     ap.env.workspace = path
     rasters = ap.ListRasters()
     rgb_rasters = [rgb for rgb in rasters if band_nmbr(rgb) >= 2 and band_nmbr(rgb) <= 5]
-    out_stack = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'TOA_RGB.img'
+    out_stack = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'STACK_BGRNIR.img'
     print ""
     print "RGB Bands:"
     print rgb_rasters
@@ -120,11 +121,86 @@ def stack_bands(path, meta):
     ap.CompositeBands_management(rgb_rasters, out_stack)    
     print ""
     print "Composite Stack Complete!"
+
+def calc_ndvi(path, meta):
+    '''Use the pan chromatic layer to pan-sharen the Blue, Green, Red, & NIR stack
+
+        @param   path:  Directory containing @param stack
+        @ptype   path:  c{str}
+        @param   meta:  Metadat built from MTL.txt
+        @ptype   meta:  Dictionary of landsat scene metadata
+        @return  Output composite image with pan-sharpening
+    '''
+
+    ap.env.workspace = path
+    output = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + '_NDVI.img'
+    red = ap.sa.Raster(ap.ListRasters('*B4.img')[0])
+    nir = ap.sa.Raster(ap.ListRasters('*B5.img')[0])
+
+    try:
+        if ap.CheckExtension('Spatial') == 'Available':
+            ap.CheckOutExtension('Spatial')
+            print ""
+            print "Checking out Spatial Analytst Extension"
+        else:
+            raise LicenseError
+            print ""
+            print "Cannot checkout Spatial Analyst Extension"
+        
+        print "\nCalculating NDVI"
+        ndvi = (nir-red)/(nir+red)
+
+        print "\nSaving NDVI As: " + str(output)
+        ndvi.save(output)
+
+        print "\nFinished NDVI"
+
+    except SpatialRefProjError:
+        ap.AddError ("Spatial Data must use a projected coordinate system to run")
+
+    except LicenseError:
+        ap.AddError ("Spatial Analyst license is unavailable") 	
+
+    finally:
+        ap.CheckInExtension("Spatial")
+        # arcpy.Delete_management("forGettingLoc")
+
+def pan_sharpen(path, meta):
+    '''Use the pan chromatic layer to pan-sharen the Blue, Green, Red, & NIR stack
+
+        @param   stack: Input composite image stack
+        @ptype   stack: c{string}
+        @param   meta:  Metadat built from MTL.txt
+        @ptype   meta:  Dictionary of landsat scene metadata
+        @return  Output composite image with pan-sharpening
+    '''
+    ap.env.workspace = path
+    out_stack = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'STACK_PANSHARP.img'
+
+    rasters = ap.ListRasters()
+    rgb = [img for img in rasters if 'STACK_BGRNIR' in img]
+    pan = [img for img in rasters if 'B8.img' in img]
+
+    print rgb
+    print pan
+    print ""
+    print "Begining Pan Sharpen"
+    ap.CreatePansharpenedRasterDataset_management(rgb[0], "3", "2", "1", "4", out_stack, pan[0], "Brovey") 
+
+    print ""
+    print "Pan Sharpen Complete"
     
 def band_nmbr(filename):
-    band_number = filename.split('_')[1].split('.')[0].replace('B', '')
-    return int(band_number)
-    
+    try:
+        band_num = int(filename.split('_')[1].split('.')[0].replace('B', ''))
+        return band_num
+    except:
+        pass
+
+
+## 'parse_mtl' Function Thanks To:
+## Copyright (c) 2011 Australian Government, Department of Sustainability, Environment, Water, Population and Communities
+
 def parse_mtl(path=None):
     '''Traverse the downloaded landsat directory and read MTL file
 
@@ -186,6 +262,9 @@ def pretty(d, indent=0):
 
 
 ##  Run Process
-stack_bands('c:/landsat/processed_toa', parse_mtl('c:/landsat'))
+path = "c:/landsat/processed_toa"
+mtl = parse_mtl("c:/landsat")
+
+calc_ndvi(path, mtl)
 
 
