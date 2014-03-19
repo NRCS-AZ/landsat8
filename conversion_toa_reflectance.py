@@ -19,46 +19,49 @@ def process_toa(path, output=None):
     '''
 
     ap.env.workspace = path
-    
-    def filter_toa():
-        ret_bands = []
-        all_bands = [band for band in os.listdir(path) if '.TIF' in band]
+    print "Workspace Environment set to " + str(path)
+    print ""
 
-        for band in all_bands:
-            band_nums = ['B2.', 'B3.', 'B4.', 'B5.', 'B6.','B7.', 'B8.']
-            for num in band_nums:
-                if num in band:
-                    ret_bands.append(band)
-
-        return ret_bands
-        
-        
-    all_bands = [band for band in os.listdir(path) if '.TIF' in band]
-    toa_bands = filter_toa()
+    all_bands = [band for band in os.listdir(path) if '.TIF' in band and not '_BQA.TIF' in band]
     mtl = parse_mtl(path)
     
     if output is None:
         output = os.path.join(path, 'processed_toa')
         if os.path.exists(output):
+            sys.exit(1)
+            print ""
             print "Directory already Exisits"
         else:
             os.mkdir(output)
+            print ""
             print "Created the output directory: " + output
     else:
         if os.path.exists(output):
-            sys.exit("Directory already exists. Please rename the directory: " + output)
+            sys.exit(1)
+            print ""
+            print "Directory already Exisits"
         else:
             os.mkdir(output)
+            print ""
             print "Created the output directory: " + output
 
     try:
         if ap.CheckExtension('Spatial') == 'Available':
             ap.CheckOutExtension('Spatial')
+            print ""
+            print "Checking out Spatial Analytst Extension"
         else:
             raise LicenseError
+            print ""
+            print "Cannot checkout Spatial Analyst Extension"
         
-        for band in toa_bands:
+        for band in all_bands:
             calc_toa(band, output, mtl)
+
+        print ""
+        print "Finished TOA Reflectance Conversion"
+
+        stack_bands(output, mtl)
 
     except SpatialRefProjError:
         ap.AddError ("Spatial Data must use a projected coordinate system to run")
@@ -83,7 +86,7 @@ def calc_toa(band_file, output, meta):
     '''
     band = band_nmbr(band_file)
     raster_band = ap.sa.Raster(band_file)
-    out_band = 'toa_refl_band_' + str(band) + '.img'
+    out_band = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'TOA_B' + str(band) + '.img'
     
     sun_elev = float(meta['IMAGE_ATTRIBUTES']['SUN_ELEVATION'])
     rad_mult = float(meta['RADIOMETRIC_RESCALING']['RADIANCE_MULT_BAND_' + str(band)])
@@ -96,10 +99,31 @@ def calc_toa(band_file, output, meta):
     print "Writing " + str(out_band)
     toa_refl.save(os.path.join(output, out_band))
 
+def stack_bands(path, meta):
+    '''Stack Landsat bands 1 - 11 within a directory
+
+        @param output: path of output reflectance.
+        @ptype output: c{str}
+    '''
+
+    print ""
+    print "Stacking bands to create a composite raster"
+
+    ap.env.workspace = path
+    rasters = ap.ListRasters()
+    rgb_rasters = [rgb for rgb in rasters if band_nmbr(rgb) >= 2 and band_nmbr(rgb) <= 5]
+    out_stack = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'TOA_RGB.img'
+    print ""
+    print "RGB Bands:"
+    print rgb_rasters
+
+    ap.CompositeBands_management(rgb_rasters, out_stack)    
+    print ""
+    print "Composite Stack Complete!"
     
 def band_nmbr(filename):
     band_number = filename.split('_')[1].split('.')[0].replace('B', '')
-    return band_number
+    return int(band_number)
     
 def parse_mtl(path=None):
     '''Traverse the downloaded landsat directory and read MTL file
@@ -160,4 +184,8 @@ def pretty(d, indent=0):
       else:
          print '\t' * (indent+1) + str(value)
 
-process_toa('c:/landsat')
+
+##  Run Process
+stack_bands('c:/landsat/processed_toa', parse_mtl('c:/landsat'))
+
+
