@@ -1,3 +1,6 @@
+#!/usr/bin/python
+# Filename: landsat8.py
+
 class LicenseError(Exception):
     pass
 
@@ -11,7 +14,7 @@ import os, sys, time, glob, math, string
 ##  Function to process a landsat scene directory
 ##
 ##  @output : Reprojected bands, TOA Reflectance, Calculated NDVI and EVI
-def process_landsat(path, output=None):
+def process_landsat(path, projection, output=None):
     '''Calc/converts TOA Reflectance for each band in the directory
 
         @type path:     c{str}
@@ -22,6 +25,7 @@ def process_landsat(path, output=None):
 
     ap.env.workspace = path
     print "Workspace Environment set to " + str(path)
+    ap.AddMessage("Workspace Environment set to " + str(path))
 
     
     if output is None:
@@ -29,16 +33,20 @@ def process_landsat(path, output=None):
         if os.path.exists(output):
             sys.exit(0)
             print "\nDirectory for reprojection already Exisits"
+            ap.AddMessage("\nDirectory for reprojection already Exisits")
         else:
             os.mkdir(output)
             print "\nCreated the output directory: " + output
+            ap.AddMessage("\nCreated the output directory: " + output)
     else:
         if os.path.exists(output):
             sys.exit(0)
             print "\nDirectory for reprojection already Exisits"
+            ap.AddMessage("\nDirectory for reprojection already Exisits")
         else:
             os.mkdir(output)
             print "\nCreated the output directory: " + output
+            ap.AddMessage("\nCreated the output directory: " + output)
 
     mtl = parse_mtl(path)
     
@@ -46,7 +54,7 @@ def process_landsat(path, output=None):
         ## Create directory in Processed out put for the TOA Reflectance
         toa = os.path.join(output, 'toa')
         
-        reproject(path, output, mtl)
+        reproject(path, output, projection, mtl)
         calc_toa(output, toa, mtl)
         stack_bands(toa, mtl)
         calc_ndvi(toa, mtl)
@@ -54,9 +62,9 @@ def process_landsat(path, output=None):
 
     finally:
         print "\n Completed processing landsat data for scene " + str(mtl['L1_METADATA_FILE']['LANDSAT_SCENE_ID'])
+        ap.AddMessage("\n Completed processing landsat data for scene " + str(mtl['L1_METADATA_FILE']['LANDSAT_SCENE_ID']))
 
-
-def reproject(input_dir, output_dir, meta):
+def reproject(input_dir, output_dir, projection, meta):
     ''' Reproject raster band
 
         @param   input_dir: landsat 8 directory after unzip
@@ -94,13 +102,16 @@ def reproject(input_dir, output_dir, meta):
     try:
         checkout_Ext("Spatial")
         print "\nReprojecting and Cleaning landsat bands."
+        ap.AddMessage("\nReprojecting and Cleaning landsat bands.")
         for band in ms_bands:
             print "\nReclassifying NoData for band " + band
+            ap.AddMessage("\nReclassifying NoData for band " + band)
             outCon = ap.sa.Con(ap.sa.Raster(bqa_band) != 1, ap.sa.Raster(band))
             out_band = os.path.join(output_dir, band)
 
-            print "Reprojecting band to NAD 83 - UTM Zone 12N"
-            ap.ProjectRaster_management(outCon, out_band, "PROJCS['NAD_1983_UTM_Zone_12N',GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Transverse_Mercator'],PARAMETER['False_Easting',500000.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',-111.0],PARAMETER['Scale_Factor',0.9996],PARAMETER['Latitude_Of_Origin',0.0],UNIT['Meter',1.0]]", "NEAREST", "30", "WGS_1984_(ITRF00)_To_NAD_1983", "", "PROJCS['WGS_84_UTM_zone_12N',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Transverse_Mercator'],PARAMETER['false_easting',500000.0],PARAMETER['false_northing',0.0],PARAMETER['central_meridian',-111.0],PARAMETER['scale_factor',0.9996],PARAMETER['latitude_of_origin',0.0],UNIT['Meter',1.0]]")
+            print "Reprojecting band"
+            ap.AddMessage("Reprojecting band")
+            ap.ProjectRaster_management(outCon, out_band, projection)
 
     except SpatialRefProjError:
         ap.AddError ("Spatial Data must use a projected coordinate system to run")
@@ -130,16 +141,20 @@ def calc_toa(input_dir, output_dir, meta):
         if os.path.exists(output_dir):
             sys.exit(0)
             print "\nDirectory for reprojection already Exisits"
+            ap.AddMessage("\nDirectory for reprojection already Exisits")
         else:
             os.mkdir(output_dir)
             print "\nCreated the output directory: " + output_dir
+            ap.AddMessage("\nCreated the output directory: " + output_dir)
     else:
         if os.path.exists(output_dir):
             sys.exit(0)
             print "\nDirectory for reprojection already Exisits"
+            ap.AddMessage("\nDirectory for reprojection already Exisits")
         else:
             os.mkdir(output_dir)
             print "\nCreated the output directory: " + output_dir
+            ap.AddMessage("\nCreated the output directory: " + output_dir)
 
     rasters = ap.ListRasters('*.TIF')
     ms_bands = [band for band in rasters if (band_nmbr(band) != None)]
@@ -149,9 +164,11 @@ def calc_toa(input_dir, output_dir, meta):
         checkout_Ext("Spatial")
 
         print "\nCalculating TOA Reflectance for landsat 8 bands"
+        ap.AddMessage("\nCalculating TOA Reflectance for landsat 8 bands")
         for band in ms_bands:
 
             print "\nBegining to calculate TOA for " + band
+            ap.AddMessage("\nBegining to calculate TOA for " + band)
             number = band_nmbr(band)
             raster_band = ap.sa.Raster(band)
             out_band = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'TOA_B' + str(number) + '.img'
@@ -163,6 +180,7 @@ def calc_toa(input_dir, output_dir, meta):
             toa_refl = (rad_mult*raster_band + rad_add)/(math.sin(sun_elev))
 
             print "Writing " + str(out_band)
+            ap.AddMessage("Writing " + str(out_band))
             toa_refl.save(os.path.join(output_dir, out_band))
 
     except SpatialRefProjError:
@@ -183,6 +201,7 @@ def stack_bands(path, meta):
     '''
 
     print "\nStacking bands to create a composite raster"
+    ap.AddMessage("\nStacking bands to create a composite raster")
 
     ap.env.workspace = path
     rasters = ap.ListRasters()
@@ -190,9 +209,11 @@ def stack_bands(path, meta):
     out_stack = str(meta['L1_METADATA_FILE']['LANDSAT_SCENE_ID']) + 'STACK_RGB.img'
     print "\nRGB Bands:"
     print " " + str(rgb_rasters)
+    ap.AddMessage("Stacking R, G, B, and NIR bands")
 
     ap.CompositeBands_management(rgb_rasters, out_stack)    
     print "\nComposite Stack Complete!"
+    ap.AddMessage("Composite Stack Complete")
 
 
 def calc_ndvi(path, meta):
@@ -214,12 +235,15 @@ def calc_ndvi(path, meta):
         checkout_Ext("Spatial")
         
         print "\nCalculating NDVI"
+        ap.AddMessage("\nCalculating NDVI")
         ndvi = (nir-red)/(nir+red)
 
         print "\nSaving NDVI As: " + str(output)
+        ap.AddMessage("\nSaving NDVI As: " + str(output))
         ndvi.save(output)
 
         print "\nFinished NDVI"
+        ap.AddMessage("\nFinished NDVI")
 
     except SpatialRefProjError:
         ap.AddError ("Spatial Data must use a projected coordinate system to run")
@@ -375,8 +399,5 @@ def pretty(d, indent=0):
          print '\t' * (indent+1) + str(value)
 
 
-##  Run Process
-
-process_landsat("c:/landsat")
-
-
+version = '0.2'
+utm_zone12 = "PROJCS['NAD_1983_UTM_Zone_12N',GEOGCS['GCS_North_American_1983',DATUM['D_North_American_1983',SPHEROID['GRS_1980',6378137.0,298.257222101]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Transverse_Mercator'],PARAMETER['False_Easting',500000.0],PARAMETER['False_Northing',0.0],PARAMETER['Central_Meridian',-111.0],PARAMETER['Scale_Factor',0.9996],PARAMETER['Latitude_Of_Origin',0.0],UNIT['Meter',1.0]]", "NEAREST", "30", "WGS_1984_(ITRF00)_To_NAD_1983", "", "PROJCS['WGS_84_UTM_zone_12N',GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]],PROJECTION['Transverse_Mercator'],PARAMETER['false_easting',500000.0],PARAMETER['false_northing',0.0],PARAMETER['central_meridian',-111.0],PARAMETER['scale_factor',0.9996],PARAMETER['latitude_of_origin',0.0],UNIT['Meter',1.0]]"
